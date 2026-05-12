@@ -24,6 +24,12 @@ fi
 PYTHON=$(command -v python3 || command -v python)
 echo "Using Python: $PYTHON  ($(${PYTHON} --version 2>&1))"
 
+# Point pkg-config at conda env's ffmpeg so av (PyAV) can build
+CONDA_PKG_CONFIG="${CONDA_PREFIX:-}/lib/pkgconfig"
+if [[ -d "$CONDA_PKG_CONFIG" ]]; then
+  export PKG_CONFIG_PATH="$CONDA_PKG_CONFIG:${PKG_CONFIG_PATH:-}"
+fi
+
 echo "=== DuoGesture Setup ==="
 
 # 1. Python dependencies
