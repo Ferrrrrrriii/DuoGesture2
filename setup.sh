@@ -4,6 +4,17 @@
 # Run once before training or evaluation.
 set -euo pipefail
 
+# Ensure conda's git is preferred over the system git (system git may need newer glibc)
+CONDA_BASE="$(conda info --base 2>/dev/null || echo "")"
+if [[ -n "$CONDA_BASE" ]]; then
+  for candidate in "$CONDA_BASE/envs/gesturelsm/bin" "$CONDA_BASE/envs/semtalk/bin" "$CONDA_BASE/bin"; do
+    if [[ -x "$candidate/git" ]]; then
+      export PATH="$candidate:$PATH"
+      break
+    fi
+  done
+fi
+
 echo "=== DuoGesture Setup ==="
 
 # 1. Python dependencies
