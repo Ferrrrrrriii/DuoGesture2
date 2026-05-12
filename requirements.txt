@@ -20,7 +20,7 @@ certifi
 cffi==1.17.1
 charset-normalizer
 click==8.1.8
-git+https://github.com/openai/CLIP.git
+https://github.com/openai/CLIP/archive/refs/heads/main.zip
 coloredlogs==15.0.1
 colorlog==6.9.0
 ConfigArgParse==1.7.1
