@@ -11,6 +11,8 @@ dependencies:
   - cudatoolkit=11.8
   - ffmpeg                     # required to build av (PyAV)
   - pip:
+    # PyTorch: install from the official wheel index for CUDA 12.1 support
+    - --extra-index-url https://download.pytorch.org/whl/cu121
     - torch==2.1.0
     - torchaudio==2.1.0
     - torchvision==0.16.0
