@@ -19,7 +19,7 @@ echo "=== DuoGesture Setup ==="
 
 # 1. Python dependencies
 echo "[1/4] Installing Python dependencies..."
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # 2. HuBERT + Whisper (needed by dataloader)
 echo "[2/4] Downloading HuBERT and Whisper models..."
