@@ -9,6 +9,7 @@ dependencies:
   - pip
   - git                        # conda git avoids GLIBC issues on older nodes
   - cudatoolkit=11.8
+  - ffmpeg                     # required to build av (PyAV)
   - pip:
     - torch==2.1.0
     - torchaudio==2.1.0
