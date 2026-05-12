@@ -1,0 +1,6 @@
+# Ignore generated weights and outputs
+weights/
+outputs/
+*.pyc
+__pycache__/
+*.log

@@ -1,0 +1,109 @@
+flowchart LR
+    %% =====================================================
+    %% Offline assets (prerequisites)
+    %% =====================================================
+    subgraph OFFLINE["Offline Prerequisites"]
+        direction TB
+        BEAT2[("BEAT2 Dataset<br/>SMPLX motion + audio + text")]
+        BEAT2 --> PREP["dataloaders/save_train_dataset.py<br/>save_test_dataset.py<br/>→ LMDB / pickle"]
+        PREP --> DLOAD["dataloaders/<br/>semtalk_dataloader.py"]
+
+        BEAT2 --> RVQ_TRAIN["RVQ-VAE Training<br/>ae_trainer / aeface_trainer<br/>aelower_trainer / aelowerfoot_trainer"]
+        RVQ_TRAIN --> RVQ_CKPT[("Per-part RVQ-VAE<br/>face / upper / hands / lower")]
+
+        TEXT_RAW["Transcript Words"] --> MOCLIP["MoCLIP / TMR Encoder<br/>(pretrained, frozen)"]
+        MOCLIP --> CLIP_EMB[("clip_dim=256<br/>chunk embeddings")]
+    end
+
+    subgraph INPUTS["Runtime Inputs (per window)"]
+        direction TB
+        AUDIO["Audio waveform (.wav)"]
+        AUDIO --> HUB["HuBERT (frozen)<br/>[B, T, 1024]"]
+        AUDIO --> ONSET["onset + amplitude<br/>[B, T, 3]"]
+        WORDS["FastText word indices<br/>[B, T]"]
+        SEED["Seed pose (4 frames)<br/>[B, 4, 337]"]
+        SPK["Speaker ID embedding"]
+    end
+
+    subgraph STAGE1["Stage 1 — Base Motion (semtalk_base)"]
+        direction TB
+        HUB --> S1_HUB["hubert_encoder_body<br/>Conv1d 1024→256"]
+        ONSET --> S1_AUD["audio_pre_encoder_body<br/>MLP→256"]
+        S1_HUB --> S1_FUSE["at_attn_body<br/>(audio↔hubert blend)"]
+        S1_AUD --> S1_FUSE
+        WORDS --> S1_WORD["text_encoder_body"]
+        SPK --> S1_DEC
+        SEED --> S1_MENC["motion_encoder<br/>VQEncoderV6"]
+        S1_MENC --> S1_DEC
+        S1_FUSE --> S1_DEC["body_decoder<br/>(self-attn + word-hints +<br/>cross-part decoders)"]
+        S1_WORD --> S1_DEC
+        S1_DEC --> S1_MASS["_apply_base_mass_prior()<br/>(De Leva, optional)"]
+        S1_MASS --> QB[("q_b: base latents<br/>face/upper/hands/lower")]
+    end
+
+    subgraph STAGE2["Stage 2 — Sparse Semantic (semtalk_sparse)"]
+        direction TB
+        CLIP_EMB --> S2_SEM
+        WORDS --> S2_WORD2["text_encoder_body"]
+        S2_WORD2 --> S2_SEM["semantic_body_decoder"]
+        S2_SEM --> BSP["body_semantic_pure<br/>[B,T,256]"]
+        BSP --> S2_MASS["+ mass prior (optional)"]
+
+        HUB --> S2_HUB["hubert_encoder_body"]
+
+        S2_MASS --> SVIB["SemanticVIB<br/>z_dim=16, free-bits=0.5<br/>two-stream: semantic + timing"]
+        S2_HUB --> SVIB
+        SVIB --> PSI["ψ gate<br/>[B, T/4]"]
+        SVIB --> KL["KL loss → β·KL"]
+
+        BSP --> SEMSCALE["body_semantic_mlp × ψ"]
+        PSI --> SEMSCALE
+
+        SEED --> S2_MENC["motion_encoder"]
+        S2_MENC --> S2_HINT["bodyhints_body MLP"]
+        SPK --> S2_EMB
+        S2_HINT --> S2_EMB["motion_embeddings 768-d<br/>+ early_cond"]
+        BSP --> S2_EMB
+        S2_EMB --> S2_SELF["Self-Attn Encoder"]
+        S2_SELF --> S2_WH["WordHints Decoder 8L<br/>(cross-attn ← gated semantic)"]
+        SEMSCALE --> S2_WH
+        S2_WH --> S2_DOWN["Conv1d stride-2 → T/2"]
+        S2_DOWN --> S2_PARTS["Upper / Hands / Lower<br/>part decoders + mid_cond"]
+        BSP --> S2_PARTS
+        QB --> BRIDGE["Latent Bridge<br/>(1−ψ)·α·q_b + (1−α)·q_s"]
+        S2_PARTS --> BRIDGE
+        BRIDGE --> QS[("q_s: semantic latents")]
+    end
+
+    subgraph DECODE["Decode + Post-process"]
+        direction TB
+        QB --> RVQ_DEC["RVQ-VAE Decoders"]
+        QS --> RVQ_DEC
+        RVQ_CKPT -.frozen.-> RVQ_DEC
+        RVQ_DEC --> RAW["Raw motion [B, T, 337]"]
+        RAW --> PHYS["PhysicsSmootherSMPLX<br/>gate-modulated EMA<br/>τ = τ_base·(1−ψ) + τ_floor·ψ"]
+        PSI --> PHYS
+        PHYS --> OUT[("Final SMPLX motion<br/>55 joints rot6d + transl + contact")]
+    end
+
+    subgraph TRAIN_EVAL["Training Losses & Evaluation"]
+        direction TB
+        OUT --> LOSSES["Recon + RVQ cls/rec<br/>+ Rhythmic InfoNCE + Cycle<br/>+ KL + Jerk + optional gate/contrast"]
+        OUT --> METRICS["Eval: FGD, Beat Align,<br/>L1 Vel, CoupledSwing"]
+    end
+
+    DLOAD --> INPUTS
+
+    style OFFLINE fill:#ecf0f1,stroke:#7f8c8d,color:#2c3e50
+    style INPUTS fill:#fef9e7,stroke:#b7950b,color:#7d6608
+    style STAGE1 fill:#d6eaf8,stroke:#2874a6,color:#1b4f72
+    style STAGE2 fill:#d5f5e3,stroke:#1e8449,color:#0e6251
+    style SVIB fill:#3498db,stroke:#1f618d,color:#fff
+    style PSI fill:#2ecc71,stroke:#1a8a4a,color:#fff
+    style BRIDGE fill:#e74c3c,stroke:#922b21,color:#fff
+    style DECODE fill:#fdebd0,stroke:#b9770e,color:#7e5109
+    style PHYS fill:#1abc9c,stroke:#117864,color:#fff
+    style TRAIN_EVAL fill:#fadbd8,stroke:#943126,color:#641e16
+    style OUT fill:#a9dfbf,stroke:#196f3d,color:#0b5345
+    style QB fill:#aed6f1,stroke:#1f618d,color:#0b3954
+    style QS fill:#abebc6,stroke:#196f3d,color:#0b3954
