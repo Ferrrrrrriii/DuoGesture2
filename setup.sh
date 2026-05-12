@@ -4,26 +4,35 @@
 # Run once before training or evaluation.
 set -euo pipefail
 
-# Ensure conda's git is preferred over the system git (system git may need newer glibc)
+# Always run from the directory containing this script
+cd "$(dirname "$(realpath "$0")")"
+
+# Prefer conda env's Python and git over stale system binaries
+# $CONDA_PREFIX is set automatically by `conda activate`; fall back to detection
 CONDA_BASE="$(conda info --base 2>/dev/null || echo "")"
-if [[ -n "$CONDA_BASE" ]]; then
+if [[ -n "${CONDA_PREFIX:-}" ]]; then
+  export PATH="$CONDA_PREFIX/bin:$PATH"
+elif [[ -n "$CONDA_BASE" ]]; then
   for candidate in "$CONDA_BASE/envs/gesturelsm/bin" "$CONDA_BASE/envs/semtalk/bin" "$CONDA_BASE/bin"; do
-    if [[ -x "$candidate/git" ]]; then
+    if [[ -x "$candidate/python" ]]; then
       export PATH="$candidate:$PATH"
       break
     fi
   done
 fi
 
+PYTHON=$(command -v python3 || command -v python)
+echo "Using Python: $PYTHON  ($(${PYTHON} --version 2>&1))"
+
 echo "=== DuoGesture Setup ==="
 
 # 1. Python dependencies
 echo "[1/4] Installing Python dependencies..."
-python -m pip install -r requirements.txt
+"$PYTHON" -m pip install -r requirements.txt
 
 # 2. HuBERT + Whisper (needed by dataloader)
 echo "[2/4] Downloading HuBERT and Whisper models..."
-python3 - << 'PYEOF'
+"$PYTHON" - << 'PYEOF'
 from huggingface_hub import snapshot_download
 import os
 os.makedirs('facebook/hubert-large-ls960-ft', exist_ok=True)
@@ -38,7 +47,7 @@ PYEOF
 
 # 3. BEAT2 dataset
 echo "[3/4] Downloading BEAT2 dataset (English subset)..."
-python3 - << 'PYEOF'
+"$PYTHON" - << 'PYEOF'
 from huggingface_hub import snapshot_download
 import os
 os.makedirs('BEAT2', exist_ok=True)
@@ -49,7 +58,7 @@ PYEOF
 
 # 4. DuoGesture pretrained weights
 echo "[4/4] Downloading DuoGesture pretrained weights..."
-python3 - << 'PYEOF'
+"$PYTHON" - << 'PYEOF'
 from huggingface_hub import hf_hub_download, snapshot_download
 import os
 
